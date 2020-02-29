@@ -33,6 +33,13 @@ aws dynamodb create-table \
     --table-name WeatherRec \
     --item '{"Coord": {"S": "35.0164;139.0077"}, "Dt": {"N": "20200220"}, "tDay": {"N": "21"}}' 
  
+aws dynamodb query --table-name WeatherRec \
+    --endpoint-url http://localhost:8000 \
+    --key-condition-expression "Coord = :c" \
+    --expression-attribute-values '{":c" : {"S": "35.0164;139.0077"}}' \
+    --projection-expression "Coord, tDay, tNight, tMin"
+
+
 */
 
 // Create DynamoDB service object
@@ -49,40 +56,48 @@ function db_get_weather(lat, lon, dates) {
       };
     console.log("look for "+lat + ';' + lon)  
 
-    // async call
-    ddb.query(params, function(err, data) {
-        if (err) {
-            console.log("Error", err);
-        } else {
-            //console.log("Success", data.Items);
-            return data.Items
-            .filter(function(element){ 
-                return dates.includes( parseInt(element.Dt.N) ); 
-            })
-            .map(function(element) {
-                new dto.WeatherInfo(
-                    element.Coord.S,
-                    element.Dt.N,
-                    typeof element.tDay === 'undefined' ? '' : element.tDay.N,
-                    typeof element.tNight === 'undefined' ? '' : element.tNight.N,
-                    typeof element.tMin === 'undefined' ? '' : element.tMin.N,
-                    typeof element.tMax === 'undefined' ? '' : element.tMax.N,
-                    typeof element.Hum === 'undefined' ? '' : element.Hum.N,
-                    typeof element.Pres === 'undefined' ? '' : element.Pres.N,
-                    typeof element.Speed === 'undefined' ? '' : element.Speed.N
-                ) 
-        
-            });
-        }
-    });  
+    return new Promise((resolve, reject) => {
+        // async call
+        ddb.query(params, (err, data) => {
+            
+            if (err) {
+                reject(err);
+            } else {
+                // console.log("Success", data.Items);
+                resolve( 
+                    data.Items
+                    .filter(function(element){ 
+                        return dates.includes( parseInt(element.Dt.N) ); 
+                    })
+                    .map(function(element, index, arr) {
+                        return new dto.WeatherInfo(
+                            element.Coord.S,
+                            element.Dt.N,
+                            typeof element.tDay === 'undefined' ? '' : element.tDay.N,
+                            typeof element.tNight === 'undefined' ? '' : element.tNight.N,
+                            typeof element.tMin === 'undefined' ? '' : element.tMin.N,
+                            typeof element.tMax === 'undefined' ? '' : element.tMax.N,
+                            typeof element.Hum === 'undefined' ? '' : element.Hum.N,
+                            typeof element.Pres === 'undefined' ? '' : element.Pres.N,
+                            typeof element.Speed === 'undefined' ? '' : element.Speed.N
+                        ) 
+                
+                }) ) // close resolve
+            }
+        }) // close query
+    }) // end Promise
 }
 
 module.exports = {
 
     // date is seconds from epoch time
-    get_weather: function (lat, lon, dates) {
-        var w = db_get_weather(lat, lon, dates)
-        console.log(w.length)
+    get_weather: async function (lat, lon, dates) {
+        var w;
+        try {
+            w = await db_get_weather(lat, lon, dates)            
+        } catch(err) {
+            console.error("Unable to query. Error:", JSON.stringify(err, null, 2))
+        }    
         if(w && w.length > 0) {
             return w
         } else {
